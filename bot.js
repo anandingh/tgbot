@@ -64,7 +64,7 @@ function showCategorySelection(ctx) {
     reply_markup: {
       inline_keyboard: [
         [{ text: '📝 Text Models', callback_data: 'category_text' }],
-        [{ text: '🖼 Image Models', callback_data: 'category_image' }],
+        [{ text: '🖼️ Image Models', callback_data: 'category_image' }],
         [{ text: '🎧 Audio Models', callback_data: 'category_audio' }]
       ]
     }
@@ -75,9 +75,9 @@ function showModelSelection(ctx, category) {
   const modelList = models[category];
   const buttons = Object.entries(modelList).map(([key, model]) => [{
     text: model.displayName,
-    callback_data: model_${key}
+    callback_data: `model_${key}`
   }]);
-  ctx.reply(*🔧 Choose ${category} model:*, {
+  ctx.reply(`*🔧 Choose ${category} model:*`, {
     parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: buttons
@@ -87,14 +87,18 @@ function showModelSelection(ctx, category) {
 
 function getModelCategory(modelKey) {
   for (const category in models) {
-    if (models[category][modelKey]) return category;
+    if (models[category][modelKey]) {
+      return category;
+    }
   }
   return null;
 }
 
 function getModelInfo(modelKey) {
   for (const category in models) {
-    if (models[category][modelKey]) return models[category][modelKey];
+    if (models[category][modelKey]) {
+      return models[category][modelKey];
+    }
   }
   return null;
 }
@@ -110,18 +114,32 @@ async function handleModelInput(ctx, input) {
   const apiKey = ctx.session.apiKey;
   let url, data, headers;
 
-  if (!apiKey) return ctx.reply('🔐 *Please send your API key first!*', { parse_mode: 'Markdown' });
-  if (!modelKey) return ctx.reply('⚠️ *Select model first using /switch*', { parse_mode: 'Markdown' });
+  if (!apiKey) {
+    await ctx.reply('🔐 *Please send your API key first!*', { parse_mode: 'Markdown' });
+    return;
+  }
+
+  if (!modelKey) {
+    await ctx.reply('⚠️ *Select model first using /switch*', { parse_mode: 'Markdown' });
+    return;
+  }
 
   const modelInfo = getModelInfo(modelKey);
-  if (!modelInfo) return ctx.reply('❌ *Model not found!*', { parse_mode: 'Markdown' });
-
-  const category = getModelCategory(modelKey);
+  if (!modelInfo) {
+    await ctx.reply('❌ *Model not found!*', { parse_mode: 'Markdown' });
+    return;
+  }
 
   headers = {
     "Content-Type": "application/json",
-    "Authorization": Bearer ${apiKey}
+    "Authorization": `Bearer ${apiKey}`
   };
+
+   const category = getModelCategory(modelKey);
+
+    if (category === 'text') await ctx.sendChatAction('typing');
+  else if (category === 'image') await ctx.sendChatAction('upload_photo');
+  else if (category === 'audio') await ctx.sendChatAction('upload_voice');
 
   if (category === 'text') {
     url = "https://api.hyperbolic.xyz/v1/chat/completions";
