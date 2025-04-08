@@ -42,11 +42,19 @@ const models = {
     }
   },
   image: {
-    'flux': { displayName: '🎨 FLUX.1-dev', apiModelName: 'FLUX.1-dev' },
-    'sd2': { displayName: '🖼 SD2', apiModelName: 'SD2' }
+    'flux': {
+      displayName: '🎨 FLUX.1-dev',
+      apiModelName: 'FLUX.1-dev'
+    },
+    'sd2': {
+      displayName: '🖼 SD2',
+      apiModelName: 'SD2'
+    }
   },
   audio: {
-    'melo_tts': { displayName: '🔊 Melo TTS' }
+    'melo_tts': {
+      displayName: '🔊 Melo TTS'
+    }
   }
 };
 
@@ -71,7 +79,9 @@ function showModelSelection(ctx, category) {
   }]);
   ctx.reply(*🔧 Choose ${category} model:*, {
     parse_mode: 'Markdown',
-    reply_markup: { inline_keyboard: buttons }
+    reply_markup: {
+      inline_keyboard: buttons
+    }
   });
 }
 
@@ -98,34 +108,21 @@ const getSwitchModelKeyboard = () => ({
 async function handleModelInput(ctx, input) {
   const modelKey = ctx.session.selectedModel;
   const apiKey = ctx.session.apiKey;
+  let url, data, headers;
 
-  if (!apiKey) {
-    await ctx.reply('🔐 *Please send your API key first!*', { parse_mode: 'Markdown' });
-    return;
-  }
-
-  if (!modelKey) {
-    await ctx.reply('⚠️ *Select model first using /switch*', { parse_mode: 'Markdown' });
-    return;
-  }
+  if (!apiKey) return ctx.reply('🔐 *Please send your API key first!*', { parse_mode: 'Markdown' });
+  if (!modelKey) return ctx.reply('⚠️ *Select model first using /switch*', { parse_mode: 'Markdown' });
 
   const modelInfo = getModelInfo(modelKey);
-  if (!modelInfo) {
-    await ctx.reply('❌ *Model not found!*', { parse_mode: 'Markdown' });
-    return;
-  }
+  if (!modelInfo) return ctx.reply('❌ *Model not found!*', { parse_mode: 'Markdown' });
 
   const category = getModelCategory(modelKey);
-  const headers = {
+
+  headers = {
     "Content-Type": "application/json",
     "Authorization": Bearer ${apiKey}
   };
 
-  if (category === 'text') await ctx.sendChatAction('typing');
-  else if (category === 'image') await ctx.sendChatAction('upload_photo');
-  else if (category === 'audio') await ctx.sendChatAction('upload_voice');
-
-  let url, data;
   if (category === 'text') {
     url = "https://api.hyperbolic.xyz/v1/chat/completions";
     data = {
@@ -184,7 +181,7 @@ async function handleModelInput(ctx, input) {
       }
     }
   } catch (error) {
-    console.error('🚨 Error:', error);
+    console.error('🚨 Error:', error.response?.data || error.message);
     const errorMsg = error.response?.status === 401
       ? '🔑 Invalid API Key'
       : '⚠️ Processing Error';
@@ -192,19 +189,15 @@ async function handleModelInput(ctx, input) {
   }
 }
 
-// ========== COMMANDS ==========
+// Handle /start
 bot.command('start', (ctx) => {
   if (!ctx.session.apiKey) {
     ctx.reply(
-      '*Welcome to Hyperbolic AI Bot*\n\n' +
-      'Send your API Key to begin:\n' +
-      '1. Get your key at https://app.hyperbolic.xyz/\n' +
-      '2. Paste it here\n\n' +
-      'Use /remove to clear session\n',
+      '*Welcome to Hyperbolic AI Bot*\n\nSend your Hyperbolic API Key first.',
       { parse_mode: 'Markdown' }
     );
   } else {
-    ctx.reply('🔁 Session resumed');
+    ctx.reply('🔁 Restarting session...');
     showCategorySelection(ctx);
   }
 });
@@ -220,101 +213,78 @@ bot.command('switch', (ctx) => {
 bot.command('remove', (ctx) => {
   delete ctx.session.apiKey;
   delete ctx.session.selectedModel;
-  ctx.reply('🗑 *Session cleared*', { parse_mode: 'Markdown' });
+  delete ctx.session.bulkPrompts;
+  ctx.reply('🗑 *Credentials removed*', { parse_mode: 'Markdown' });
 });
 
 bot.command('help', (ctx) => {
   ctx.reply(
     '📚 *Commands:*\n' +
-    '/start - Start bot\n' +
-    '/switch - Change model\n' +
-    '/remove - Remove API key\n' +
-    '/bulk - Submit multiple prompts\n' +
-    '/help - Show help',
+    '*/start* - Start\n' +
+    '*/switch* - Switch model\n' +
+    '*/remove* - Remove session\n' +
+    'Just paste prompts like:\n\n' +
+    'What is AI?,Tell me a joke,Best movie of 2024?\n\n' +
+    '*Each prompt separated by a comma!*',
     { parse_mode: 'Markdown' }
   );
 });
 
-bot.command('bulk', (ctx) => {
-  if (!ctx.session.apiKey || !ctx.session.selectedModel) {
-    return ctx.reply('⚠️ Please set your API key and model first using /start and /switch.');
-  }
-
-  ctx.session.bulkAwaitingInput = true;
-  ctx.reply(
-    '📥 *Bulk Mode*\n\n' +
-    'Send your prompts in one message separated by commas ,\n\n' +
-    'Example:\n' +
-    'What is AI?, How does blockchain work?, Tell me a joke\n\n' +
-    'They will be processed one by one with a delay.',
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// ========== TEXT HANDLER ==========
 bot.on('text', async (ctx) => {
   const text = ctx.message.text;
 
-  if (ctx.session.bulkAwaitingInput) {
-    const prompts = text.split(',').map(p => p.trim()).filter(Boolean);
-    ctx.session.bulkAwaitingInput = false;
-
-    if (prompts.length === 0) {
-      return ctx.reply('⚠️ No valid prompts found.');
-    }
-
-    ctx.reply(🚀 Processing ${prompts.length} prompts...);
-
-    for (const prompt of prompts) {
-      await handleModelInput(ctx, prompt);
-      const delay = Math.floor(Math.random() * (120000 - 60000 + 1)) + 60000;
-      await ctx.reply(⏳ Next prompt in ${(delay / 1000).toFixed(0)}s);
-      await new Promise(res => setTimeout(res, delay));
-    }
-
-    return ctx.reply('✅ All prompts completed!');
-  }
-
   if (!ctx.session.apiKey) {
-    ctx.session.apiKey = text;
+    ctx.session.apiKey = text.trim();
     ctx.reply('✅ *API key saved!*', { parse_mode: 'Markdown' });
     showCategorySelection(ctx);
-  } else if (ctx.session.selectedModel) {
-    await handleModelInput(ctx, text);
+  } else if (!ctx.session.selectedModel) {
+    ctx.reply('⚠️ *Please select a model first using /switch*', { parse_mode: 'Markdown' });
+  } else if (text.includes(',')) {
+    const prompts = text.split(',').map(p => p.trim()).filter(p => p.length > 0);
+    ctx.session.bulkPrompts = prompts;
+
+    ctx.reply(📥 Received ${prompts.length} prompts. Starting...);
+
+    prompts.forEach((prompt, index) => {
+      const delay = Math.floor(Math.random() * 5 + 1) * 60 * 1000; // 1-5 mins
+      setTimeout(() => {
+        handleModelInput(ctx, prompt);
+      }, delay * index);
+    });
+
+    setTimeout(() => {
+      ctx.session.bulkPrompts = [];
+      ctx.reply('✅ *Finished all prompts.*', { parse_mode: 'Markdown' });
+    }, (prompts.length + 1) * 5 * 60 * 1000); // max expected run
   } else {
-    ctx.reply('⚠️ *Select model first using /switch*', { parse_mode: 'Markdown' });
+    await handleModelInput(ctx, text);
   }
 });
 
-// ========== CALLBACK HANDLER ==========
 bot.on('callback_query', async (ctx) => {
   try {
     await ctx.answerCbQuery();
     const data = ctx.callbackQuery.data;
 
     if (data === 'switch_model') {
-      return showCategorySelection(ctx);
-    }
-
-    if (data.startsWith('category_')) {
+      showCategorySelection(ctx);
+    } else if (data.startsWith('category_')) {
       const category = data.split('_')[1];
-      return showModelSelection(ctx, category);
-    }
-
-    if (data.startsWith('model_')) {
+      showModelSelection(ctx, category);
+    } else if (data.startsWith('model_')) {
       const modelKey = data.replace('model_', '');
       ctx.session.selectedModel = modelKey;
       const modelInfo = getModelInfo(modelKey);
-      return ctx.reply(🎯 Selected: ${modelInfo.displayName});
+      await ctx.reply(🎯 Selected: ${modelInfo.displayName});
     }
   } catch (error) {
-    console.error('Callback Error:', error);
-    ctx.reply('❌ Action failed');
+    console.error('🚨 Callback Error:', error);
+    await ctx.reply('❌ Action failed');
   }
 });
 
 bot.launch();
-console.log('🤖 Bot running...');
+console.log('🤖 Bot is running...');
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
